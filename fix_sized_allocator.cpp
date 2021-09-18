@@ -2,6 +2,9 @@
 
 #include "quick/fix_sized_allocator.hpp"
 
+#include <sys/mman.h>
+#include <unistd.h>
+
 #include <memory>
 #include <cassert>
 #include <iostream>
@@ -80,14 +83,14 @@ BlockLinkList::~BlockLinkList() {
   assert(head == nullptr && tail == nullptr);
 }
 
-void* BlockMetadata::allocate(int block_offset, int block_capacity) {
+void* BlockMetadata::allocate(int element_size, int block_offset, int block_capacity) {
   char* block_main_memory = ((char*)this) + block_offset;
   if (first_time_alloc_index < block_capacity) {
     ++num_allocated;
     return block_main_memory + element_size * (first_time_alloc_index++);
   } else if (free_list != nullptr) {
     ++num_allocated;
-    auto output = (T*)free_list;
+    auto output = free_list;
     free_list = *((void**)free_list);
     return output;
   } else {
@@ -96,7 +99,7 @@ void* BlockMetadata::allocate(int block_offset, int block_capacity) {
   }
 }
 
-void BlockMetadata::deallocate(BlockMetadata& b, void* ptr) {
+void BlockMetadata::deallocate(void* ptr) {
   // Construct an object of type `void*` at the deallocated memory @ptr.
   new (ptr) (void*)(free_list);  // inplace new.
   free_list = ptr;
@@ -136,10 +139,12 @@ FixSizedAllocatorImpl::FixSizedAllocatorImpl(int element_size)
 }
 
 void* FixSizedAllocatorImpl::allocate() {
-  if (partially_filled_blocks.Empty()) {
-    auto* block = MakeNewBlock()
+  if (partially_filled_blocks.head == nullptr) {
+    auto* block = MakeNewBlock(page_size);
     partially_filled_blocks.PushBack(block);
-    return block->allocate(element_size, block_offset, block_capacity);
+    auto* output = block->allocate(element_size, block_offset, block_capacity);
+    // printf("Alloc: %p\n", output);
+    return output;
   }
   auto* block = partially_filled_blocks.head;
   auto* output = block->allocate(element_size, block_offset, block_capacity);
@@ -147,20 +152,25 @@ void* FixSizedAllocatorImpl::allocate() {
     partially_filled_blocks.Remove(block);
     filled_blocks.PushBack(block);
   }
+  // printf("Alloc: %p\n", output);
   return output;
 }
 
 void FixSizedAllocatorImpl::deallocate(void* p) {
-  BlockMetadata* block = p & (~(page_size - 1));
+  // printf("Dealloc: %p\n", p);
+  static_assert(sizeof(void*) == sizeof(long), "");
+  char* page_start_addr = ((char*)p) - (((long)p) & (page_size - 1));
+  BlockMetadata* block = (BlockMetadata*)page_start_addr;
   bool is_filled = (block->num_allocated == block_capacity);
   block->deallocate(p);
   if (is_filled) {
     filled_blocks.Remove(block);
     partially_filled_blocks.PushBack(block);
   } else if (block->num_allocated == 0) {
-    filled_blocks.Remove(block);
-    DeleteBlock(block);
+    partially_filled_blocks.Remove(block);
+    DeleteBlock(block, page_size);
   }
+  // printf("Done\n");
 }
 
 }  // namespace fix_sized_allocator_impl

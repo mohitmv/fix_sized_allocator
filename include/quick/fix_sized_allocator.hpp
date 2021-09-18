@@ -11,6 +11,7 @@ namespace fix_sized_allocator_impl {
 struct BlockMetadata;
 
 class BlockLinkList {
+ public:
   BlockMetadata* head = nullptr;
   BlockMetadata* tail = nullptr;
   void Remove(BlockMetadata* node);
@@ -31,12 +32,13 @@ class FixSizedAllocatorImpl {
 template<class T>
 class FixSizedAllocator {
  public:
+  using value_type = T;
   FixSizedAllocator() : impl(sizeof(T)) { }
   T* allocate(std::size_t n) {
     assert(n == 1);
     return (T*)impl.allocate();
   }
-  void deallocate(std::size_t n, T* ptr) {
+  void deallocate(T* ptr, std::size_t n) {
     assert(n == 1);
     return impl.deallocate(ptr);
   }
