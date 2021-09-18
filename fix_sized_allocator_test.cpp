@@ -34,7 +34,9 @@ int64_t Benchmark1() {
       }
     }
   }
-  return GetEpochMicroSeconds() - t_start;
+  size_t x = ll.size();
+  int y = x * x -  (x + 1) * (x-1);
+  return y - 1 + GetEpochMicroSeconds() - t_start;
 }
 
 
